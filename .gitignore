@@ -61,3 +61,5 @@ target/
 #file from imagenet
 imagenet.synset.obtain_synset_list
 words.txt
+allUrls.json
+tmp
