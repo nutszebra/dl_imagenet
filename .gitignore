@@ -55,3 +55,9 @@ docs/_build/
 
 # PyBuilder
 target/
+
+#swp file
+*.swp
+#file from imagenet
+imagenet.synset.obtain_synset_list
+words.txt
