@@ -11,6 +11,10 @@ from datetime import datetime
 import hashlib
 import threading
 
+from PIL import ImageFile
+#To ensure that *.png file are read
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 #how to use imagenet api: http://image-net.org/download-API
 
 #base url
@@ -140,7 +144,7 @@ class Command(object):
 def downloadUrl(url, dirPath):
   try:
     extension = extractExtension(url)
-    name = hashlib.sha224(url.encode("utf8")).hexdigest() + "." + extension
+    name = hashlib.sha224(unicode(url, errors="ignore").encode('utf8')).hexdigest() + "." + extension
     picName = dirPath + "/" + name
     if not checkExistance(picName):
       if not len(extension):
@@ -151,7 +155,7 @@ def downloadUrl(url, dirPath):
       #verify whether it's not broken or not
       tmp = Image.open("./" + name)
       tmp.verify()
-      tmp.load_end()
+      #tmp.load_end()
       #if picture is too small, raise error
       if tmp.size[0] * tmp.size[1] <= 50 * 50:
         raise ValueError('picture is too small')
@@ -159,10 +163,11 @@ def downloadUrl(url, dirPath):
   except:
     if os.path.exists("./" + name):
       cmd = "rm ./" + name
-      command = Command(cmd)
+      subprocess.call(cmd, shell=True)
 
 
 count = 0
+picCount = 0
 asyncNum = 0
 taskNum = 100
 numPic = len(files)
@@ -173,8 +178,8 @@ for f in files:
   dirPath = basePic + f
   makeDirectory(dirPath)
   urls = storeToArray(baseUrl + f + ".txt")
-  sen = overwrite.bar(count, numPic)
-  sen = sen + " " + f
+  senBar = overwrite.bar(count, numPic)
+  sen = senBar + " " + f + " ****number of pic: " + str(picCount)
   overwrite.overwrite(sen)
   tasks = []
   for url in urls:
@@ -182,7 +187,10 @@ for f in files:
     asyncio.ensure_future(downloadUrl(url, dirPath))
     )
     asyncNum = asyncNum + 1
+    picCount = picCount + 1
     if asyncNum >= taskNum:
+      sen = senBar + " " + f + " ****number of pic: " + str(picCount)
+      overwrite.overwrite(sen)
       loop.run_until_complete(asyncio.wait(tasks))
       asyncNum = 0
       tasks = []
