@@ -1,13 +1,13 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import asyncio
 import re
+from PIL import Image
 import os
 import json
 import subprocess
 import time
 import overwrite
 from datetime import datetime
-import Image
 import hashlib
 import threading
 
@@ -26,6 +26,9 @@ if not "imagenet.synset.obtain_synset_list" in os.listdir("./"):
   print("downloading synset_list...")
   cmd ="wget http://www.image-net.org/api/text/imagenet.synset.obtain_synset_list -q"
   subprocess.call(cmd, shell=True)
+else:
+  print("synset_list have been downloaded...")
+
 
 #download words.txt
 #the association of ids and tags
@@ -33,6 +36,8 @@ if not "words.txt" in os.listdir("./"):
   print("downloading the table about ids and tags...")
   cmd ="wget http://image-net.org/archive/words.txt -q"
   subprocess.call(cmd, shell=True)
+else:
+  print("the tabel about ids and tags has been downloaded...")
 
 def storeToArray(name):
   answer = []
@@ -54,7 +59,9 @@ def storeToDictionary(name):
   f.close()
   return answer
 
+print("storing words....")
 words = storeToDictionary("./words.txt")
+print("storing synset list....")
 synset = storeToArray("./imagenet.synset.obtain_synset_list")
 
 #obtain url
@@ -72,7 +79,7 @@ print("getting all urls....")
 for picId in fileUrl:
   count = count + 1
   sen = overwrite.bar(count, numId)
-  sen = sen + " " + picId
+  sen = sen + " " + str(picId)
   overwrite.overwrite(sen)
   cmd = "wget " + apiUrl + picId + " -O tmp -q"
   subprocess.call(cmd, shell=True)
@@ -95,7 +102,12 @@ def downloadPic(url, name):
   subprocess.call(cmd, shell=True)
 
 def extractExtension(name):
-  return re.findall(r"^.*(\..*)$", name)[0]
+  possibility = ["jpg", "Jpg", "JPG", "JPEG", "jpeg", "PNG", "png", "Png"]
+  result = [extension for extension in possibility if name.rfind(extension) > 0]
+  if len(result):
+    return result[0]
+  else:
+    return ""
 
 def moveFile(path, name):
   cmd = "mv " + name + " " + path
@@ -106,7 +118,6 @@ def writeToFile(arr, path):
   for line in arr:
     f.write(line + "\n")
   f.close()
-
 
 class Command(object):
     def __init__(self, cmd):
@@ -123,60 +134,59 @@ class Command(object):
         if thread.is_alive():
             self.process.terminate()
             thread.join()
-        print self.process.returncode
+        return self.process.returncode
+
+@asyncio.coroutine
+def downloadUrl(url, dirPath):
+  try:
+    extension = extractExtension(url)
+    name = hashlib.sha224(url.encode("utf8")).hexdigest() + "." + extension
+    picName = dirPath + "/" + name
+    if not checkExistance(picName):
+      if not len(extension):
+        raise ValueError('extension is blank')
+      cmd = "wget " + url + " -O " + "./" + name + " -q"
+      command = Command(cmd)
+      command.run(timeout = 10)
+      #verify whether it's not broken or not
+      tmp = Image.open("./" + name)
+      tmp.verify()
+      tmp.load_end()
+      #if picture is too small, raise error
+      if tmp.size[0] * tmp.size[1] <= 50 * 50:
+        raise ValueError('picture is too small')
+      moveFile(picName, "./" + name)
+  except:
+    if os.path.exists("./" + name):
+      cmd = "rm ./" + name
+      command = Command(cmd)
 
 
-baseLog = "/mnt/s3/imagenet/log/"
 count = 0
+asyncNum = 0
+taskNum = 100
 numPic = len(files)
+loop = asyncio.get_event_loop()
 
 for f in files:
   count = count + 1
-  fail = []
   dirPath = basePic + f
   makeDirectory(dirPath)
   urls = storeToArray(baseUrl + f + ".txt")
   sen = overwrite.bar(count, numPic)
   sen = sen + " " + f
   overwrite.overwrite(sen)
+  tasks = []
   for url in urls:
-    extension = extractExtension(url)
-    picName = dirPath + "/" + hashlib.sha224(url).hexdigest() + extension
-    if not checkExistance(picName):
-      try:
-        if not len(extension):
-          raise ValueError('extension is blank')
-        cmd = "wget " + url + " -O ./tmp -q"
-        command = Command(cmd)
-        if command.run(timeout = 30):
-          raise ValueError("failed downloafing")
-        #verify whether it's not broken or not
-        tmp = Image.open("./tmp")
-        tmp.verify()
-        tmp.load_end()
-        #if picture is too small, raise error
-        if tmp.size[0] * tmp.size[1] <= 50 * 50:
-          raise ValueError('picture is too small')
-        moveFile(picName, "./tmp")
-      except:
-        fail.append(url)
-  #if some files were failed, take the log
-  if len(fail):
-    writeToFile(fail, baseLog + f + ".log")
-  
-  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    tasks.append(
+    asyncio.ensure_future(downloadUrl(url, dirPath))
+    )
+    asyncNum = asyncNum + 1
+    if asyncNum >= taskNum:
+      loop.run_until_complete(asyncio.wait(tasks))
+      asyncNum = 0
+      tasks = []
+  if len(tasks):
+    loop.run_until_complete(asyncio.wait(tasks))
+    asyncNum = 0
+    tasks = []
