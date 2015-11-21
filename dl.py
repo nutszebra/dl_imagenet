@@ -45,7 +45,7 @@ else:
 
 def storeToArray(name):
   answer = []
-  f = open(name)
+  f = open(name, errors="ignore")
   for line in f.readlines():
     shape = line.split()
     if len(shape):
@@ -144,7 +144,12 @@ class Command(object):
 def downloadUrl(url, dirPath):
   try:
     extension = extractExtension(url)
-    name = hashlib.sha224(unicode(url, errors="ignore").encode('utf8')).hexdigest() + "." + extension
+    url = url.encode("utf8","ignore")
+    if not len(url):
+      raise ValueError('url is not parsable')
+    name = hashlib.sha224(url).hexdigest() + "." + extension
+    if not len(name):
+      raise ValueError('name is empty')
     picName = dirPath + "/" + name
     if not checkExistance(picName):
       if not len(extension):
